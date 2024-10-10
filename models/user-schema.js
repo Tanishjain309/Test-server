@@ -21,12 +21,23 @@ const UserSchema = new Schema({
   projects: [{
     type: Schema.Types.ObjectId,
     ref: 'Project',
-  }]
+  }],
+  incorrectAttemptsLeft:{
+    type: Number,
+    default: 5,
+  },
+  isBlocked: {
+    type: Boolean,
+    default: false 
+  },
+  blockExpires:{
+    type: Date,
+  }
 }, {
   timestamps: true
 });
 
-// Password hashing before saving user
+
 UserSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();
   const salt = await genSalt(10);
@@ -34,7 +45,7 @@ UserSchema.pre('save', async function (next) {
   next();
 });
 
-// Comparing password with hashed password
+
 UserSchema.methods.comparePassword = async function (password) {
   return await compare(password, this.password);
 };

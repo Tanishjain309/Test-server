@@ -14,29 +14,64 @@ export const register = async (req, res) => {
   }
 };
 
+
 export const login = async (req, res) => {
   const { email, password } = req.body;
   try {
     const user = await User.findOne({ email });
-    if (!user) return res.status(404).json({message:'No user Exist with this Email'});
+    if (!user) {
+      return res.status(404).json({ message: 'No user exists with this email' });
+    }
+    const now = new Date();
+    if (user.isBlocked) {
+      if (now < user.blockExpires) {
+        return res.status(403).json({ message: 'Account is blocked. Try again later.' });
+      } else {
+        user.isBlocked = false;
+        user.incorrectAttemptsLeft = 5;
+        user.blockExpires = null;
+      }
+    }
 
     const isMatch = await user.comparePassword(password);
-    if (!isMatch) return res.status(404).json({message:'Incorrect password'});
+    
+    if (!isMatch) {
+      user.incorrectAttemptsLeft -= 1;
 
-    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
-      expiresIn: '1d'
-    });
+      if (user.incorrectAttemptsLeft < 0) {
+        user.isBlocked = true;
+        user.blockExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      }
+
+      await user.save();
+      return res.status(404).json({ message: user.isBlocked ? "Your account has been blocked due to security measures." : 'Incorrect password' });
+    }
+
+    user.incorrectAttemptsLeft = 5;
+    user.isBlocked = false; 
+    await user.save();
+
+    // Generate JWT token
+    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '1d' });
+
+    // Set the cookie
     res.cookie("token", token, {
-        maxAge: 24 * 60 * 60 * 1000, // token valid for 24 hours
-        httpOnly: true,
-        secure: true, // since we are in development
-        sameSite: 'none',
-      })
-    return res.status(200).json({ token, message:"LoggedIn Successfully.", data:{name: user.name, email: user.email} });
+      maxAge: 24 * 60 * 60 * 1000,
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
+    });
+
+    return res.status(200).json({
+      token,
+      message: "Logged in successfully.",
+      data: { name: user.name, email: user.email }
+    });
   } catch (error) {
     return res.status(400).json({ message: error.message });
   }
 };
+
 
 export const logout = (req, res) => {
     res.cookie("token", "", {
